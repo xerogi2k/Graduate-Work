@@ -1,0 +1,158 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: autotrading-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autotrading} -d ${POSTGRES_DB:-autotrading}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  market-data-service:
+    build:
+      context: .
+      dockerfile: services/market-data-service/Dockerfile
+    environment:
+      SERVICE_NAME: market-data-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      BINGX_BASE_URL: ${BINGX_BASE_URL:-https://open-api.bingx.com}
+      BINGX_REQUEST_TIMEOUT_SECONDS: ${BINGX_REQUEST_TIMEOUT_SECONDS:-10}
+      BINGX_RETRY_ATTEMPTS: ${BINGX_RETRY_ATTEMPTS:-3}
+      BINGX_RETRY_BACKOFF_SECONDS: ${BINGX_RETRY_BACKOFF_SECONDS:-0.5}
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ml-service:
+    build:
+      context: .
+      dockerfile: services/ml-service/Dockerfile
+    environment:
+      SERVICE_NAME: ml-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      MODEL_ARTIFACT_DIR: ${MODEL_ARTIFACT_DIR:-/app/artifacts/models}
+    volumes:
+      - ml_model_artifacts:/app/artifacts/models
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  strategy-service:
+    build:
+      context: .
+      dockerfile: services/strategy-service/Dockerfile
+    environment:
+      SERVICE_NAME: strategy-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  risk-manager:
+    build:
+      context: .
+      dockerfile: services/risk-manager/Dockerfile
+    environment:
+      SERVICE_NAME: risk-manager
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    ports:
+      - "8004:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backtesting-service:
+    build:
+      context: .
+      dockerfile: services/backtesting-service/Dockerfile
+    environment:
+      SERVICE_NAME: backtesting-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    ports:
+      - "8005:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  execution-service:
+    build:
+      context: .
+      dockerfile: services/execution-service/Dockerfile
+    environment:
+      SERVICE_NAME: execution-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_USER: ${POSTGRES_USER:-autotrading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autotrading}
+      POSTGRES_DB: ${POSTGRES_DB:-autotrading}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    ports:
+      - "8006:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    environment:
+      MARKET_DATA_SERVICE_URL: ${MARKET_DATA_SERVICE_URL:-http://market-data-service:8000}
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8000}
+      STRATEGY_SERVICE_URL: ${STRATEGY_SERVICE_URL:-http://strategy-service:8000}
+      RISK_MANAGER_URL: ${RISK_MANAGER_URL:-http://risk-manager:8000}
+      BACKTESTING_SERVICE_URL: ${BACKTESTING_SERVICE_URL:-http://backtesting-service:8000}
+      EXECUTION_SERVICE_URL: ${EXECUTION_SERVICE_URL:-http://execution-service:8000}
+    ports:
+      - "8501:8501"
+    depends_on:
+      - market-data-service
+      - ml-service
+      - strategy-service
+      - risk-manager
+      - backtesting-service
+      - execution-service
+
+volumes:
+  postgres_data:
+  ml_model_artifacts:
